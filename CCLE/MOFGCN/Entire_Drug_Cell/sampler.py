@@ -29,7 +29,9 @@ class Sampler(object):
         sample_row = row[index]
         sample_col = col[index]
         sample_data = data[index]
-        sample = sp.coo_matrix((sample_data, (sample_row, sample_col)), shape=self.adj_mat.shape)
+        sample = sp.coo_matrix(
+            (sample_data, (sample_row, sample_col)), shape=self.adj_mat.shape
+        )
         return sample
 
     def sample_negative(self):
@@ -48,12 +50,19 @@ class Sampler(object):
         test_row = all_row[test_neg_index]
         test_col = all_col[test_neg_index]
         test_data = all_data[test_neg_index]
-        test = sp.coo_matrix((test_data, (test_row, test_col)), shape=self.adj_mat.shape)
+
+        test = sp.coo_matrix(
+            (test_data, (test_row, test_col)), shape=self.adj_mat.shape
+        )
 
         # 采样训练集
         train_neg_index = np.delete(index, test_neg_index)
         train_row = all_row[train_neg_index]
         train_col = all_col[train_neg_index]
         train_data = all_data[train_neg_index]
-        train = sp.coo_matrix((train_data, (train_row, train_col)), shape=self.adj_mat.shape)
+
+        train = sp.coo_matrix(
+            (train_data, (train_row, train_col)), shape=self.adj_mat.shape
+        )
+
         return train, test
