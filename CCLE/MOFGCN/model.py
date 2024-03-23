@@ -3,8 +3,14 @@ import numpy as np
 from abc import ABC
 import torch.nn as nn
 import torch.nn.functional as fun
-from MOFGCN.myutils import exp_similarity, full_kernel, sparse_kernel, jaccard_coef, torch_corr_x_y, \
-    scale_sigmoid_activation_function
+from MOFGCN.myutils import (
+    exp_similarity,
+    full_kernel,
+    sparse_kernel,
+    jaccard_coef,
+    torch_corr_x_y,
+    scale_sigmoid_activation_function,
+)
 
 
 class ConstructAdjMatrix(nn.Module, ABC):
@@ -16,19 +22,31 @@ class ConstructAdjMatrix(nn.Module, ABC):
     def forward(self):
         n_cell = self.adj_mat.shape[0]
         n_drug = self.adj_mat.shape[1]
-        cell_identity = torch.diag(torch.diag(torch.ones(n_cell, n_cell, dtype=torch.float, device=self.device)))
-        drug_identity = torch.diag(torch.diag(torch.ones(n_drug, n_drug, dtype=torch.float, device=self.device)))
+        cell_identity = torch.diag(
+            torch.diag(
+                torch.ones(n_cell, n_cell, dtype=torch.float, device=self.device)
+            )
+        )
+        drug_identity = torch.diag(
+            torch.diag(
+                torch.ones(n_drug, n_drug, dtype=torch.float, device=self.device)
+            )
+        )
         cell_drug = torch.cat((cell_identity, self.adj_mat), dim=1)
         drug_cell = torch.cat((torch.t(self.adj_mat), drug_identity), dim=1)
         adj_matrix = torch.cat((cell_drug, drug_cell), dim=0)
-        d = torch.diag(torch.pow(torch.sum(adj_matrix, dim=1), -1/2))
-        identity = torch.diag(torch.diag(torch.ones(d.shape, dtype=torch.float, device=self.device)))
+        d = torch.diag(torch.pow(torch.sum(adj_matrix, dim=1), -1 / 2))
+        identity = torch.diag(
+            torch.diag(torch.ones(d.shape, dtype=torch.float, device=self.device))
+        )
         adj_matrix_hat = torch.add(identity, torch.mm(d, torch.mm(adj_matrix, d)))
         return adj_matrix_hat
 
 
 class FusionFeature(nn.Module, ABC):
-    def __init__(self, gene, cna, mutation, sigma, k, iterates, feature_drug, device="cpu"):
+    def __init__(
+        self, gene, cna, mutation, sigma, k, iterates, feature_drug, device="cpu"
+    ):
         super(FusionFeature, self).__init__()
         gene = torch.from_numpy(gene).to(device)
         cna = torch.from_numpy(cna).to(device)
@@ -52,26 +70,47 @@ class FusionFeature(nn.Module, ABC):
         mutation_s = sparse_kernel(self.mutation_exp_similarity, k=self.k)
         two = torch.tensor(2, dtype=torch.float32, device=self.device)
         three = torch.tensor(3, dtype=torch.float32, device=self.device)
+
         it = 0
         while it < self.iterates:
-            gene_p_next = torch.mm(torch.mm(gene_s, torch.div(torch.add(cna_p, mutation_p), two)), gene_s.t())
-            cna_p_next = torch.mm(torch.mm(cna_s, torch.div(torch.add(gene_p, mutation_p), two)), cna_s.t())
-            mutation_p_next = torch.mm(torch.mm(mutation_s, torch.div(torch.add(cna_p, gene_p), two)), mutation_s.t())
+            gene_p_next = torch.mm(
+                torch.mm(gene_s, torch.div(torch.add(cna_p, mutation_p), two)),
+                gene_s.t(),
+            )
+            cna_p_next = torch.mm(
+                torch.mm(cna_s, torch.div(torch.add(gene_p, mutation_p), two)),
+                cna_s.t(),
+            )
+            mutation_p_next = torch.mm(
+                torch.mm(mutation_s, torch.div(torch.add(cna_p, gene_p), two)),
+                mutation_s.t(),
+            )
             gene_p = gene_p_next
             cna_p = cna_p_next
             mutation_p = mutation_p_next
             it += 1
-        fusion_feature = torch.div(torch.add(torch.add(gene_p, cna_p), mutation_p), three)
+        fusion_feature = torch.div(
+            torch.add(torch.add(gene_p, cna_p), mutation_p), three
+        )
         fusion_feature = fusion_feature.to(dtype=torch.float32)
         return fusion_feature
 
     def forward(self):
         drug_similarity = full_kernel(self.drug_jac_similarity)
         cell_similarity = self.fusion_cell_feature()
-        zeros1 = torch.zeros(cell_similarity.shape[0], drug_similarity.shape[1], dtype=torch.float32,
-                             device=self.device)
-        zeros2 = torch.zeros(drug_similarity.shape[0], cell_similarity.shape[1], dtype=torch.float32,
-                             device=self.device)
+        zeros1 = torch.zeros(
+            cell_similarity.shape[0],
+            drug_similarity.shape[1],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        zeros2 = torch.zeros(
+            drug_similarity.shape[0],
+            cell_similarity.shape[1],
+            dtype=torch.float32,
+            device=self.device,
+        )
+
         cell_zeros = torch.cat((cell_similarity, zeros1), dim=1)
         zeros_drug = torch.cat((zeros2, drug_similarity), dim=1)
         fusion_feature = torch.cat((cell_zeros, zeros_drug), dim=0)
@@ -111,16 +150,44 @@ class GDecoder(nn.Module, ABC):
 
 
 class GModel(nn.Module, ABC):
-    def __init__(self, adj_mat, gene, cna, mutation, sigma, k, iterates, feature_drug, n_hid1, n_hid2, alpha,
-                 device="cpu"):
+    def __init__(
+        self,
+        adj_mat,
+        gene,
+        cna,
+        mutation,
+        sigma,
+        k,
+        iterates,
+        feature_drug,
+        n_hid1,
+        n_hid2,
+        alpha,
+        device="cpu",
+    ):
         super(GModel, self).__init__()
         construct_adj_matrix = ConstructAdjMatrix(adj_mat, device=device)
-        fusioner = FusionFeature(gene, cna, mutation, sigma=sigma, k=k, iterates=iterates, feature_drug=feature_drug,
-                                 device=device)
         adj_matrix_hat = construct_adj_matrix()
+        fusioner = FusionFeature(
+            gene,
+            cna,
+            mutation,
+            sigma=sigma,
+            k=k,
+            iterates=iterates,
+            feature_drug=feature_drug,
+            device=device,
+        )
+
         feature = fusioner()
         self.encoder = GEncoder(adj_matrix_hat, feature, n_hid1)
-        self.decoder = GDecoder(adj_mat.shape[0], adj_mat.shape[1], n_hid1=n_hid1, n_hid2=n_hid2, alpha=alpha)
+        self.decoder = GDecoder(
+            adj_mat.shape[0],
+            adj_mat.shape[1],
+            n_hid1=n_hid1,
+            n_hid2=n_hid2,
+            alpha=alpha,
+        )
 
     def forward(self):
         encode_output = self.encoder()
@@ -129,18 +196,20 @@ class GModel(nn.Module, ABC):
 
 
 class Early(object):
-    def __init__(self, tolerance: int, data_len: int):
+    def __init__(self, tolerance: int, data_len: int, test_len: int):
         self.auc = np.zeros(tolerance, dtype=np.float32)
-        self.epoch = np.zeros(tolerance, dtype=np.int)
+        self.epoch = np.zeros(tolerance, dtype=int)
         self.predict_data = torch.zeros((tolerance, data_len), dtype=torch.float32)
+        self.predict_data_test = torch.zeros((tolerance, test_len), dtype=torch.float32)
         self.tolerance = tolerance
         self.len = 0
 
-    def push_data(self, auc, epoch, predict_data):
+    def push_data(self, auc, epoch, predict_data, predict_data_test):
         i = self.len % self.tolerance
         self.auc[i] = auc
         self.epoch[i] = epoch
         self.predict_data[i, :] = predict_data
+        self.predict_data_test[i, :] = predict_data_test
         self.len += 1
 
     def average(self):
@@ -152,18 +221,25 @@ class Early(object):
 
 
 class EarlyStop(object):
-    def __init__(self, tolerance: int, data_len: int):
-        self.early = Early(tolerance=tolerance, data_len=data_len)
+    def __init__(self, tolerance: int, data_len: int, test_len: int):
+        self.early = Early(tolerance=tolerance, data_len=data_len, test_len=test_len)
         self.auc_pre = None
         self.epoch_pre = None
         self.predict_data_pre = None
+        self.predict_data_test = None
 
-    def stop(self, auc, epoch, predict_data):
+    def stop(self, auc, epoch, predict_data, predict_data_test):
         avg_pre = self.early.average()
         self.auc_pre = self.early.auc.copy()
         self.epoch_pre = self.early.epoch.copy()
         self.predict_data_pre = self.early.predict_data.clone()
-        self.early.push_data(auc=auc, epoch=epoch, predict_data=predict_data)
+        self.predict_data_test = self.early.predict_data_test.clone()
+        self.early.push_data(
+            auc=auc,
+            epoch=epoch,
+            predict_data=predict_data,
+            predict_data_test=predict_data_test,
+        )
         avg_next = self.early.average()
         flag = False
         if avg_pre > avg_next:
